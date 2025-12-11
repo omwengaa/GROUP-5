@@ -1,0 +1,168 @@
+import java.util.*;
+import java.time.Instant;
+
+// ----------------------------
+// Packet class
+// ----------------------------
+class Packet {
+    private int pktId;
+    private String src;
+    private String dst;
+    private int sizeBytes;
+    private long timestamp;
+
+    public Packet(int pktId, String src, String dst, int sizeBytes) {
+        this.pktId = pktId;
+        this.src = src;
+        this.dst = dst;
+        this.sizeBytes = sizeBytes;
+        this.timestamp = Instant.now().getEpochSecond();
+    }
+
+    public int getPktId() { return pktId; }
+
+    public double sizeMB() {
+        return sizeBytes / (1024.0 * 1024.0);
+    }
+}
+
+
+// ----------------------------
+// Abstract base class: NetworkNode
+// ----------------------------
+abstract class NetworkNode {
+    protected String nodeId;
+    protected List<Packet> queue;
+
+    public NetworkNode(String nodeId) {
+        this.nodeId = nodeId;
+        this.queue = new ArrayList<>();
+    }
+
+    public void receivePacket(Packet pkt) {
+        queue.add(pkt);
+    }
+
+    public int queueLength() {
+        return queue.size();
+    }
+
+    public abstract Packet forwardPacket(NetworkNode dstNode);
+}
+
+
+// ----------------------------
+// RouterNode subclass
+// ----------------------------
+class RouterNode extends NetworkNode {
+
+    protected Map<String, String> routingTable;
+
+    public RouterNode(String nodeId) {
+        super(nodeId);
+        this.routingTable = new HashMap<>();
+    }
+
+    @Override
+    public Packet forwardPacket(NetworkNode dstNode) {
+        if (!queue.isEmpty()) {
+            Packet pkt = queue.remove(0); // FIFO
+            dstNode.receivePacket(pkt);
+            return pkt;
+        }
+        return null;
+    }
+
+    public void updateRoutingTable(String dst, String nextHop) {
+        routingTable.put(dst, nextHop);
+    }
+}
+
+
+// ----------------------------
+// CoreRouter subclass
+// ----------------------------
+class CoreRouter extends RouterNode {
+
+    public CoreRouter(String nodeId) {
+        super(nodeId);
+    }
+
+    public void optimizeRouting() {
+        System.out.println("[CoreRouter " + nodeId + "] Optimizing routing...");
+    }
+
+    @Override
+    public Packet forwardPacket(NetworkNode dstNode) {
+        Packet pkt = super.forwardPacket(dstNode);
+        if (pkt != null) {
+            System.out.println("[CoreRouter " + nodeId +
+                "] Forwarded packet " + pkt.getPktId() + " with optimized path");
+        }
+        return pkt;
+    }
+}
+
+
+// ----------------------------
+// EdgeRouter subclass
+// ----------------------------
+class EdgeRouter extends RouterNode {
+
+    public EdgeRouter(String nodeId) {
+        super(nodeId);
+    }
+
+    @Override
+    public Packet forwardPacket(NetworkNode dstNode) {
+        if (!queue.isEmpty()) {
+            Packet pkt = queue.remove(0);
+
+            // Drop packets > 2MB
+            if (pkt.sizeMB() > 2) {
+                System.out.println("[EdgeRouter " + nodeId +
+                    "] Dropped packet " + pkt.getPktId() + " (too large)");
+                return null;
+            }
+
+            dstNode.receivePacket(pkt);
+            System.out.println("[EdgeRouter " + nodeId +
+                "] Forwarded packet " + pkt.getPktId() + " with QoS rules");
+            return pkt;
+        }
+        return null;
+    }
+}
+
+
+// ----------------------------
+// MAIN PROGRAM (entry point)
+// ----------------------------
+public class NetworkSimulation {
+
+    public static void main(String[] args) {
+
+        // Create nodes
+        CoreRouter core = new CoreRouter("Core1");
+        EdgeRouter edge = new EdgeRouter("Edge1");
+        RouterNode hostDst = new RouterNode("H2");
+
+        // Create packets
+        Packet pkt1 = new Packet(401, "H1", "H2", 1_000_000);
+        Packet pkt2 = new Packet(402, "H1", "H2", 3_000_000);
+
+        // Queue packets in edge router
+        edge.receivePacket(pkt1);
+        edge.receivePacket(pkt2);
+
+        // Forward them through the network
+        edge.forwardPacket(core);
+        edge.forwardPacket(core);
+
+        core.forwardPacket(hostDst);
+        core.forwardPacket(hostDst);
+
+        // Output result
+        System.out.println("Host/Destination queue length: " + hostDst.queueLength());
+    }
+}
